@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DDCFarsi Podcast</title>
+    <!-- لود فونت آیکون‌ها برای شبکه‌های اجتماعی -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://v1.fontapi.ir/css/Vazir');
+        
+        * { box-sizing: border-box; font-family: 'Vazir', sans-serif; margin: 0; padding: 0; }
+        body { background: #121212; color: white; display: flex; flex-direction: column; align-items: center; padding-bottom: 30px; }
+
+        /* هدر برنامه */
+        h2.app-title { margin-top: 15px; color: #00e5ff; font-weight: bold; }
+
+        /* ---------- محیط نمایش ریلز (نسبت 9:16) ---------- */
+        #studio-wrapper {
+            width: 100%;
+            max-width: 400px;
+            aspect-ratio: 9/16;
+            background: #000;
+            position: relative;
+            margin-top: 10px;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        #raw-video { display: none; }
+        #render-canvas { width: 100%; height: 100%; display: block; }
+
+        /* ---------- پنل تنظیمات ---------- */
+        #controls { width: 100%; max-width: 400px; padding: 15px; }
+        .control-group { margin-bottom: 15px; background: #2a2a2a; padding: 15px; border-radius: 10px; }
+        label { display: block; margin-bottom: 5px; font-size: 13px; color: #aaa; }
+        input[type="text"], select {
+            width: 100%; padding: 10px; border-radius: 5px; border: none;
+            background: #333; color: white; margin-bottom: 10px; font-size: 14px;
+        }
+        input[type="file"] { margin-bottom: 10px; font-size: 12px; width: 100%; color: #aaa; }
+        
+        button {
+            background: #00e5ff; color: #000; border: none; padding: 12px 15px;
+            border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 10px; font-size: 14px;
+        }
+        button.record-btn { background: #ff0055; color: white; animation: pulse 2s infinite; }
+        button.stop-btn { background: #444; color: white; display: none; }
+        button.download-btn { background: #00e676; color: black; display: none; }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 0, 85, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0); }
+        }
+
+        .flex-row { display: flex; gap: 10px; }
+        .flex-row button { flex: 1; }
+        .social-inputs { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+        .social-inputs div { display: flex; align-items: center; gap: 10px; }
+        .social-inputs i { width: 20px; text-align: center; font-size: 18px; }
+
+        /* فوتر (لینک سازنده) */
+        .footer-link {
+            text-align: center; margin-top: 10px; font-size: 15px;
+        }
+        .footer-link a {
+            color: #ffaa00; text-decoration: none; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <h2 class="app-title">DDCFarsi Podcast</h2>
+
+    <!-- محیط نمایش ویدیو (Canvas) -->
+    <div id="studio-wrapper">
+        <video id="raw-video" autoplay muted playsinline></video>
+        <canvas id="render-canvas" width="720" height="1280"></canvas>
+    </div>
+
+    <!-- تنظیمات و کنترل ها -->
+    <div id="controls">
+        
+        <div class="control-group" id="record-controls" style="display: none;">
+            <button id="btn-record" class="record-btn" onclick="startRecording()">🔴 شروع ضبط ریلز</button>
+            <button id="btn-stop" class="stop-btn" onclick="stopRecording()">⬛ پایان ضبط</button>
+            <button id="btn-download" class="download-btn" onclick="downloadVideo()">⬇️ دانلود ویدیو</button>
+        </div>
+
+        <div class="control-group">
+            <label>📷 اتصال دوربین و میکروفون</label>
+            <select id="video-source"></select>
+            <select id="audio-source"></select>
+            <div class="flex-row">
+                <button onclick="startCamera(false)" style="background: #ffaa00;">فعال‌سازی</button>
+                <button onclick="flipCamera()" style="background: #333; color: white;">🔄 چرخش دوربین</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>🖼️ افزودن ویدیو/تصویر پس‌زمینه (و تصویر در تصویر)</label>
+            <input type="file" id="media-upload" accept="image/*,video/*">
+            <button onclick="toggleCameraPiP()" style="background: #555; color: white;">تغییر حالت دوربین (کامل / کوچک)</button>
+        </div>
+
+        <div class="control-group">
+            <label>🎨 لوگو پادکست</label>
+            <input type="file" id="logo-upload" accept="image/*">
+        </div>
+
+        <div class="control-group">
+            <label>📱 شبکه‌های اجتماعی (خالی بگذارید تا نمایش داده نشود)</label>
+            <div class="social-inputs">
+                <div><i class="fab fa-instagram" style="color: #E1306C;"></i> <input type="text" id="soc-ig" placeholder="Instagram ID" value="@DDCFarsi"></div>
+                <div><i class="fab fa-telegram" style="color: #0088cc;"></i> <input type="text" id="soc-tg" placeholder="Telegram ID"></div>
+                <div><i class="fab fa-youtube" style="color: #FF0000;"></i> <input type="text" id="soc-yt" placeholder="YouTube Channel"></div>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>✍️ اطلاعات متنی (زیرنویس و گوینده)</label>
+            <input type="text" id="input-title" placeholder="عنوان بالای پادکست..." value="DDCFarsi Podcast">
+            <input type="text" id="input-speaker" placeholder="نام گوینده..." value="نام شما">
+            <input type="text" id="input-topic" placeholder="موضوع بحث..." value="موضوع امروز...">
+            <input type="text" id="input-ticker" placeholder="متن زیرنویس متحرک پایین..." value="به پادکست DDCFarsi خوش آمدید. لایک و سابسکرایب فراموش نشود...">
+        </div>
+    </div>
+
+    <!-- فوتر یوتیوب سازنده -->
+    <div class="footer-link">
+        <a href="https://www.youtube.com/ddcfarsi" target="_blank">www.youtube.com/ddcfarsi</a>
+    </div>
+
+    <script>
+        const videoEl = document.getElementById('raw-video');
+        const canvas = document.getElementById('render-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        let logoImg = new Image();
+        let currentStream = null;
+        
+        // متغیرهای مدیا (پس زمینه)
+        let customBgImg = new Image();
+        let customBgVideo = document.createElement('video');
+        customBgVideo.muted = true; customBgVideo.loop = true; customBgVideo.playsInline = true;
+        let bgMediaType = null;
+        let isCameraPiP = false; // حالت تصویر در تصویر دوربین
+
+        let mediaRecorder;
+        let recordedChunks = [];
+        let isRecording = false;
+        let currentFacingMode = "user"; // پیش فرض دوربین جلو
+
+        ctx.textBaseline = "middle";
+
+        // --- 1. دریافت دوربین و میکروفون ---
+        async function getDevices() {
+            try {
+                await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                
+                const videoSelect = document.getElementById('video-source');
+                const audioSelect = document.getElementById('audio-source');
+                videoSelect.innerHTML = ''; audioSelect.innerHTML = '';
+
+                devices.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    if (device.kind === 'videoinput') {
+                        option.text = device.label || `دوربین ${videoSelect.length + 1}`;
+                        videoSelect.appendChild(option);
+                    } else if (device.kind === 'audioinput') {
+                        option.text = device.label || `میکروفون ${audioSelect.length + 1}`;
+                        audioSelect.appendChild(option);
+                    }
+                });
+            } catch (err) { alert("لطفا دسترسی دوربین و میکروفون را بدهید."); }
+        }
+        getDevices();
+
+        // تابع فعالسازی دوربین (با قابلیت پشتیبانی از دکمه چرخش)
+        async function startCamera(useFacingMode = false) {
+            if (currentStream) currentStream.getTracks().forEach(t => t.stop());
+            
+            const vSource = document.getElementById('video-source').value;
+            const aSource = document.getElementById('audio-source').value;
+            
+            let videoConstraints = { width: { ideal: 720 }, height: { ideal: 1280 } };
+            
+            if (useFacingMode) {
+                videoConstraints.facingMode = currentFacingMode;
+            } else {
+                videoConstraints.deviceId = vSource ? { exact: vSource } : undefined;
+            }
+            
+            try {
+                currentStream = await navigator.mediaDevices.getUserMedia({
+                    video: videoConstraints,
+                    audio: { deviceId: aSource ? { exact: aSource } : undefined, echoCancellation: true, noiseSuppression: true }
+                });
+                
+                videoEl.srcObject = currentStream;
+                videoEl.play();
+                
+                document.getElementById('record-controls').style.display = 'block';
+                requestAnimationFrame(renderCanvas);
+            } catch (error) { alert('خطا در دسترسی به دوربین.'); }
+        }
+
+        // چرخش بین دوربین پشت و جلو
+        function flipCamera() {
+            currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
+            startCamera(true);
+        }
+
+        // --- 2. مدیریت آپلود فایل ها ---
+        document.getElementById('logo-upload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) logoImg.src = URL.createObjectURL(file);
+        });
+
+        document.getElementById('media-upload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const url = URL.createObjectURL(file);
+            
+            if (file.type.startsWith('video/')) {
+                bgMediaType = 'video';
+                customBgVideo.src = url;
+                customBgVideo.play();
+            } else {
+                bgMediaType = 'image';
+                customBgImg.src = url;
+            }
+            isCameraPiP = true; // با آپلود مدیا، دوربین به صورت خودکار کوچک میشود
+        });
+
+        function toggleCameraPiP() {
+            isCameraPiP = !isCameraPiP;
+        }
+
+        // --- 3. موتور رندر (موشن گرافیک روی Canvas) ---
+        let tickerX = 720;
+        let socialIndex = 0;
+        let socialTimer = 0;
+        
+        function drawScaled(media) {
+            const vW = media.videoWidth || media.width;
+            const vH = media.videoHeight || media.height;
+            const scale = Math.max(canvas.width / vW, canvas.height / vH);
+            const x = (canvas.width / 2) - (vW / 2) * scale;
+            const y = (canvas.height / 2) - (vH / 2) * scale;
+            ctx.drawImage(media, x, y, vW * scale, vH * scale);
+        }
+
+        function renderCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 3.1 رسم تصویر/ویدیو پس‌زمینه (در صورت وجود)
+            if (bgMediaType === 'video' && customBgVideo.readyState >= 2) {
+                drawScaled(customBgVideo);
+            } else if (bgMediaType === 'image' && customBgImg.src) {
+                drawScaled(customBgImg);
+            } else {
+                ctx.fillStyle = "#000";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            // 3.2 رسم دوربین
+            if (videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+                if (isCameraPiP) {
+                    // حالت تصویر در تصویر (دوربین کوچک در گوشه بالا-راست)
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.roundRect(canvas.width - 250, 110, 220, 290, 15);
+                    ctx.clip();
+                    ctx.drawImage(videoEl, canvas.width - 250, 110, 220, 290);
+                    ctx.restore();
+                    // کشیدن کادر سفید دور دوربین کوچک
+                    ctx.beginPath();
+                    ctx.roundRect(canvas.width - 250, 110, 220, 290, 15);
+                    ctx.lineWidth = 4;
+                    ctx.strokeStyle = "#fff";
+                    ctx.stroke();
+                } else {
+                    // دوربین تمام صفحه
+                    drawScaled(videoEl);
+                }
+            }
+
+            // 3.3 رسم لوگو
+            if (logoImg.src) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(80, 80, 50, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.drawImage(logoImg, 30, 30, 100, 100);
+                ctx.restore();
+            }
+
+            // 3.4 عنوان بالای پادکست
+            const title = document.getElementById('input-title').value;
+            if (title) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+                ctx.roundRect(canvas.width - 320, 30, 290, 50, 10);
+                ctx.fill();
+                ctx.fillStyle = "#ffaa00";
+                ctx.font = "bold 24px Vazir, Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(title, canvas.width - 175, 55);
+            }
+
+            // 3.5 موشن گرافیک شبکه‌های اجتماعی (با آیکون)
+            renderSocials();
+
+            // 3.6 معرفی گوینده (Lower Third)
+            const speaker = document.getElementById('input-speaker').value;
+            const topic = document.getElementById('input-topic').value;
+            if (speaker || topic) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+                ctx.roundRect(30, canvas.height - 180, 350, 80, 15);
+                ctx.fill();
+                
+                ctx.fillStyle = "#00e5ff"; 
+                ctx.fillRect(30, canvas.height - 180, 10, 80);
+
+                ctx.textAlign = "right";
+                ctx.font = "bold 30px Vazir, Arial";
+                ctx.fillStyle = "#fff";
+                ctx.fillText(speaker, 360, canvas.height - 150);
+                
+                ctx.font = "20px Vazir, Arial";
+                ctx.fillStyle = "#ccc";
+                ctx.fillText(topic, 360, canvas.height - 115);
+            }
+
+            // 3.7 نوار اخبار (Ticker)
+            const tickerText = document.getElementById('input-ticker').value;
+            if (tickerText) {
+                ctx.fillStyle = "rgba(255, 0, 85, 0.9)";
+                ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
+                
+                ctx.fillStyle = "#fff";
+                ctx.font = "bold 22px Vazir, Arial";
+                ctx.textAlign = "left";
+                ctx.fillText(tickerText, tickerX, canvas.height - 25);
+                
+                tickerX -= 3;
+                const textWidth = ctx.measureText(tickerText).width;
+                if (tickerX < -textWidth) tickerX = canvas.width;
+            }
+
+            requestAnimationFrame(renderCanvas);
+        }
+
+        function renderSocials() {
+            const ig = document.getElementById('soc-ig').value;
+            const tg = document.getElementById('soc-tg').value;
+            const yt = document.getElementById('soc-yt').value;
+            
+            let activeSocials = [];
+            // استفاده از کد یونیکد FontAwesome برای رسم لوگو روی بوم
+            if(ig) activeSocials.push({ text: ig, color: '#E1306C', icon: '\uf16d' });
+            if(tg) activeSocials.push({ text: tg, color: '#0088cc', icon: '\uf2c6' });
+            if(yt) activeSocials.push({ text: yt, color: '#FF0000', icon: '\uf167' });
+
+            if (activeSocials.length === 0) return;
+
+            socialTimer++;
+            if (socialTimer > 150) { 
+                socialIndex = (socialIndex + 1) % activeSocials.length;
+                socialTimer = 0;
+            }
+
+            const current = activeSocials[socialIndex];
+            
+            // جایگاه باکس شبکه های اجتماعی (اگر دوربین کوچک بود، جایگاه را پایین تر میبرد تا روی هم نیفتند)
+            const boxY = isCameraPiP ? 420 : 100;
+
+            ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+            ctx.roundRect(canvas.width - 250, boxY, 220, 40, 20);
+            ctx.fill();
+
+            // رسم لوگوی شبکه اجتماعی
+            ctx.fillStyle = current.color;
+            ctx.font = '900 22px "Font Awesome 6 Brands"';
+            ctx.textAlign = "left";
+            ctx.fillText(current.icon, canvas.width - 235, boxY + 22);
+            
+            // رسم متن آیدی
+            ctx.font = "bold 18px Vazir, Arial";
+            ctx.fillStyle = "#fff";
+            ctx.fillText(current.text, canvas.width - 200, boxY + 20);
+        }
+
+        // افزونه رسم مستطیل گرد برای Canvas
+        CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+            if (w < 2 * r) r = w / 2;
+            if (h < 2 * r) r = h / 2;
+            this.beginPath();
+            this.moveTo(x + r, y);
+            this.arcTo(x + w, y, x + w, y + h, r);
+            this.arcTo(x + w, y + h, x + x, y + h, r);
+            this.arcTo(x, y + h, x, y, r);
+            this.arcTo(x, y, x + w, y, r);
+            this.closePath();
+            return this;
+        }
+
+        // --- 4. سیستم ضبط ویدیو و خروجی ---
+        function startRecording() {
+            if (!currentStream) return alert("ابتدا دوربین را فعال کنید.");
+            recordedChunks = [];
+            const canvasStream = canvas.captureStream(30);
+            const audioTrack = currentStream.getAudioTracks()[0];
+            if (audioTrack) {
+                canvasStream.addTrack(audioTrack);
+            }
+
+            // اگر ویدیو پس زمینه هم صدا دارد، اینجا باید ترکیب شود، اما برای سادگی فقط میکروفون ضبط میشود.
+            
+            let options = { mimeType: 'video/webm; codecs=vp9' };
+            if (MediaRecorder.isTypeSupported('video/mp4')) {
+                options = { mimeType: 'video/mp4' };
+            } else if (!MediaRecorder.isTypeSupported('video/webm; codecs=vp9')) {
+                options = { mimeType: '' }; 
+            }
+
+            try {
+                mediaRecorder = new MediaRecorder(canvasStream, options);
+            } catch (e) {
+                mediaRecorder = new MediaRecorder(canvasStream);
+            }
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) recordedChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = () => {
+                document.getElementById('btn-download').style.display = 'block';
+                alert("ضبط تمام شد! حالا می‌توانید ویدیو را دانلود کنید.");
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+
+            document.getElementById('btn-record').style.display = 'none';
+            document.getElementById('btn-stop').style.display = 'block';
+            document.getElementById('btn-download').style.display = 'none';
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+                
+                document.getElementById('btn-record').style.display = 'block';
+                document.getElementById('btn-stop').style.display = 'none';
+            }
+        }
+
+        function downloadVideo() {
+            if (recordedChunks.length === 0) return;
+            const ext = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+            const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            document.body.appendChild(a);
+            a.style = 'display: none';
+            a.href = url;
+            a.download = `DDCFarsi_Reels_${new Date().getTime()}.${ext}`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
